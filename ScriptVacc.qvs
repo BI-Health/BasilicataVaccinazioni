@@ -532,4 +532,4 @@ Store Fact_Vaccinazioni into 'lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/02.Q
 
 Store Dim_Assistito into 'lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/02.Qlik/QV_Golden/Vaccinazioni/Anagrafica.qvd' (qvd);
 
-Prova per Push
+prova2
