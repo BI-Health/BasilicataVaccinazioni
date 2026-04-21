@@ -1,0 +1,535 @@
+
+// ============================================================
+// MODELLO DATI - VACCINAZIONI (STRUTTURA A STELLA VELOCE)
+// Una sola FACT table + 2 dimensioni
+// ============================================================
+
+// ============================================================
+// STEP 1 - CARICAMENTO RAW
+// ============================================================
+
+[_Raw_Somm]:
+LOAD
+    ID_ASSISTITO_GIAVA, CODANTIGENE, DOSE, DATASOMMINISTRAZIONE,
+    CODICEAICVACCINO, CAPITALIZE(DENOMVACCINO) AS DENOMVACCINO, CODICESTRUTTURA, TIPOEROGATORE,
+    CODCONDIZIONESANITARIA, CODCATEGORIARISCHIO, LOTTOVACCINO,
+    DATASCADENZA, MODALITAPAGAMENTO, SITOINOCULAZIONE,
+    COMUNESOMMINISTRAZIONE, ASLSOMMINISTRAZIONE, REGIONESOMMINISTRAZIONE,
+    STATOESTEROSOMMINISTRAZIONE
+FROM [lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/02.Qlik/QV_Associative/VaccinazioniSomministrate.qvd]
+(qvd)
+WHERE Year(DATASOMMINISTRAZIONE) >= Year(Today()) - 3;
+
+[_Raw_Mancate]:
+LOAD
+    ID_ASSISTITO_GIAVA, CODANTIGENE, DOSE,
+    DATANONEFFETTUAZIONE, MOTIVAZIONE
+FROM [lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/02.Qlik/QV_Associative/VaccinazioniMancate.qvd]
+(qvd)
+WHERE Year(DATANONEFFETTUAZIONE) >= Year(Today()) - 3;
+
+
+// ============================================================
+// STEP 2 - MAPPE DA ANAGRAFICA ASSISTITI
+// ============================================================
+
+[Map_ComuneResidenza]:   
+MAPPING LOAD ID_ASSISTITO_GIAVA, Right('000000' & Text(COMUNERESIDENZA), 6)  
+FROM [lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/01.Datafile/Vaccinazioni/AnagraficaAVN_output.csv]
+(txt, utf8, embedded labels, delimiter is ';', msq);
+
+[Map_ComuneDomicilio]:   
+MAPPING LOAD ID_ASSISTITO_GIAVA, Right('000000' & Text(COMUNEDOMICILIO), 6) 
+FROM [lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/01.Datafile/Vaccinazioni/AnagraficaAVN_output.csv]
+(txt, utf8, embedded labels, delimiter is ';', msq);
+
+[Map_ASLResidenza]:      
+MAPPING LOAD ID_ASSISTITO_GIAVA, ASLRESIDENZA    
+FROM [lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/01.Datafile/Vaccinazioni/AnagraficaAVN_output.csv]
+(txt, utf8, embedded labels, delimiter is ';', msq);
+
+[Map_ASLDomicilio]:      
+MAPPING LOAD ID_ASSISTITO_GIAVA, ASLDOMICILIO      
+FROM [lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/01.Datafile/Vaccinazioni/AnagraficaAVN_output.csv]
+(txt, utf8, embedded labels, delimiter is ';', msq);
+
+[Map_RegioneResidenza]:  
+MAPPING LOAD ID_ASSISTITO_GIAVA, REGIONERESIDENZA 
+FROM [lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/01.Datafile/Vaccinazioni/AnagraficaAVN_output.csv]
+(txt, utf8, embedded labels, delimiter is ';', msq);
+
+[Map_RegioneDomicilio]:  
+MAPPING LOAD ID_ASSISTITO_GIAVA, REGIONEDOMICILIO  
+FROM [lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/01.Datafile/Vaccinazioni/AnagraficaAVN_output.csv]
+(txt, utf8, embedded labels, delimiter is ';', msq);
+
+
+// ============================================================
+// STEP 3 - MAPPE DESCRITTIVE (comuni, ASL, regioni da file)
+// ============================================================
+
+[Map_ComuneDes]:
+MAPPING LOAD DISTINCT
+    Right('000000' & Text(CodComuneResidenza), 6),
+    DenComune
+FROM [lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/01.Datafile/Anagrafiche/EXT_ANAG_Comuni.qvd]
+(qvd);
+
+// [Map_ASLDes]:
+// MAPPING LOAD DISTINCT
+//     "CODICE REGIONE" & "CODICE AZIENDA",
+//     Capitalize("DENOMINAZIONE AZIENDA")
+// FROM [lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/01.Datafile/Anagrafiche/ASL 2010-2025.csv]
+// (txt, codepage is 28591, embedded labels, delimiter is ';', msq);
+
+[Map_ASLDes]:
+load * inline [
+Codice, Descrizione
+170201, "ASL Potenza"
+170202, "ASL Matera"
+170901, "AO San Carlo"
+170902, "IRCCS CROB"
+170910, "IRCCS CROB];
+
+
+
+[Map_RegioneDes]:
+MAPPING LOAD DISTINCT
+    Codice,
+    Descrizione
+FROM [lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/01.Datafile/Anagrafiche/EXT_ANAG_Regioni.qvd]
+(qvd);
+
+
+// ============================================================
+// STEP 4 - MAPPE DESCRITTIVE (INLINE)
+// ============================================================
+
+[Map_TipoErogatore]:
+MAPPING LOAD * INLINE [
+Valore, Descrizione
+0, Istituto di ricovero pubblico o privato
+1, Altra struttura sanitaria pubblica o privata accreditata 
+2, Centro vaccinale
+3, Medico di Medicina Generale (MMG)
+4, Pediatra di Libera Scelta (PLS)
+5, Specialista
+6, Altro
+7, Struttura privata autorizzata non accreditata SSN
+8, Struttura di riabilitazione
+9, Strutture che non effettuano attività sanitaria
+10, Struttura Militare
+11, Ambulatorio nei luoghi di lavoro
+12, Farmacia
+99, Dato non disponibile
+];
+
+[Map_CondizioniSanitarie]:
+MAPPING LOAD * INLINE [
+Codice, Descrizione
+00, Nessuna condizione
+01, Alcoolismo cronico
+02, Asplenia anatomica o funzionale e candidati alla splenectomia
+03, BPCO
+04, Chemioterapia o radioterapia
+05, Coagulopatie
+06, Deficit del complemento
+07, Deficit dell’immunità cellulare
+08, Deficit dell’immunità umorale
+09, Diabete mellito e altre endocrino patie
+10, Emodializzati e uremici cronici di cui si prevede l’ingresso in dialisi e dializzati
+11, Emoglobinopatie quali anemia falciforme e talassemia
+12, Epatopatie croniche
+13, Impianto cocleare
+14, Infezione da HIV
+15, Insufficienza renale/surrenale cronica
+16, Lesioni eczematose croniche o psoriasiche alle mani
+17, Malattie associate a un incrementato rischio di aspirazione delle secrezioni respiratorie quali le malattie neuromuscolari
+18, Malattie croniche dell’apparato cardio-circolatorio
+19, Malattie croniche dell’apparato respiratorio
+20, Malattie del motoneurone
+21, Malattie infiammatorie croniche e sindromi da malassorbimento intestinale
+22, Malattie onco-ematologiche (leucemie, linfomi e mieloma multiplo)
+23, Tumori solidi
+24, Obesità
+25, Trapianto di midollo
+26, Tossicodipendenza
+27, Trapianto d’organo solido
+28, Bambini e adolescenti in trattamento a lungo termine con acido acetilsalicilico, a rischio di Sindrome di Reye in caso di infezione influenzale
+29, Soggetti con perdite liquorali da traumi o intervento
+30, Soggetti destinati a terapia immunosoppressiva
+31, Malattie metaboliche
+32, Malattie degli organi emopoietici
+33, Malattie congenite e acquisite che comportino carente produzione di anticorpi, immunosoppressione indotta da farmaci
+34, Patologie per le quali sono programmati importanti interventi chirurgici
+35, Malattie neurologiche
+36, Fibrosi cistica
+37, Malattie autoimmuni immunodeficienze primitive
+38, Malattie cerebrovascolari
+39, Sindrome di Down
+40, Disabilità (fisica, sensoriale, intellettiva, psichica)
+99, Dato non disponibile
+];
+
+[Map_CategoriaRischio]:
+MAPPING LOAD * INLINE [
+Codice, Descrizione
+01, Nessuna Indicazione
+02, Operatore sanitario
+03, Personale di laboratorio
+04, Operatore scolastico
+05, Lavoratore a contatto con animali o materiale di origine animale
+06, Soggetto addetto a servizio pubblico di primario interesse collettivo
+07, Altra attività lavorativa a rischio
+08, Studente dell’area sanitaria
+09, Volontario nel settore della sanità
+10, Soggetto con comportamenti sessuali a rischio o tossicodipendente
+11, Detenuto
+12, Profilassi post-esposizione
+13, Donna in gravidanza
+25, Donna nel periodo "postpartum"
+14, Donna in età fertile
+26, Donatore di sangue
+15, Donatore di sangue appartenente a gruppo sanguigno raro
+16, Residente in area a maggior rischio
+17, Eta = 60 anni
+18, Eta > 60 anni
+19, Contatto di caso
+20, Convivente di soggetto ad alto rischio
+21, Ospite in struttura sanitaria e socio-sanitaria residenziale e semi-residenziale
+22, Viaggi all'estero
+23, Frequenza comunità (es. asilo)
+27, Forze di polizia – Forze dell’ordine
+28, Vigili del fuoco
+29, Eta compresa fra 6 mesi e 6 anni
+30, Operatore non sanitario in struttura sanitaria e socio-sanitaria residenziale e semi-residenziale
+31, Soggetto vulnerabile per patologia
+32, Forze Armate (incluso personale civile amministrazione Difesa)
+33, Polizia penitenziaria e personale civile che opera negli istituti penitenziari
+35, Eta < 60 anni
+24, Altro
+99, Dato non disponibile
+];
+
+[Map_Antigeni]:
+MAPPING LOAD * INLINE [
+Codice, Descrizione
+01, COLERA
+02, DIFTERITE
+03, ENCEFALITE DA ZECCA
+04, ENCEFALITE GIAPPONESE
+05, EPATITE A
+06, EPATITE B
+07, FEBBRE GIALLA
+08, INFLUENZA
+09, HERPES ZOSTER
+10, HAEMOPHILUS INFLUENZAE B CONIUGATO
+11, HERPES ZOSTER RICOMBINANTE
+12, HERPES ZOSTER ATTENUATO
+13, INFLUENZA TRIVALENTE INATTIVATO
+14, INFLUENZA TRIVALENTE INATTIVATO ADIUVATO
+15, INFLUENZA TRIVALENTE VIRUS FRAMMENTATO
+16, INFLUENZA QUADRIVALENTE INATTIVATO
+42, INFLUENZA QUADRIVALENTE INATTIVATO SU COLTURE CELLULARI
+43, INFLUENZA QUADRIVALENTE AD ALTO DOSAGGIO
+41, INFLUENZA VIVO ATTENUATO
+45, INFLUENZA QUADRIVALENTE ADIUVATO
+46, INFLUENZA QUADRIVALENTE a DNA RICOMBINANTE
+47, VAIOLO e VAIOLO EMPOX
+17, MENINGOCOCCO GRUPPI ACW135Y CONIUGATI
+18, MENINGOCOCCO GRUPPI ACW135Y POLISACCARIDICO
+19, MENINGOCOCCO GRUPPO B
+20, MENINGOCOCCO GRUPPO C CONIUGATO
+21, MENINGOCOCCO GRUPPO C POLISACCARIDICO
+22, MENINGOCOCCO GRUPPO A
+23, MORBILLO
+25, PAPILLOMAVIRUS UMANO (TIPI 16, 18)
+26, PAPILLOMAVIRUS UMANO (TIPI 6, 11, 16, 18, 31, 33, 45, 52, 58)
+27, PAPILLOMAVIRUS UMANO (TIPI 6, 11, 16, 18)
+28, PAROTITE
+29, PERTOSSE
+30, PNEUMOCOCCO POLISACCARIDICO
+31, PNEUMOCOCCO POLISACCARIDICO CONIUGATO
+32, POLIOMELITE OPV
+33, POLIOMIELITE IPV
+34, RABBIA
+35, ROSOLIA
+36, ROTAVIRUS
+37, TETANO
+38, TIFO
+39, TUBERCOLOSI
+40, VARICELLA
+44, COVID 19
+48, DENGUE
+49, RSV RICOMBINANTE ADIUVATO
+50, RSV RICOMBINANTE BIVALENTE
+51, INFLUENZA TRIVALENTE INATTIVATO SU COLTURE CELLULARI
+52, INFLUENZA TRIVALENTE AD ALTO DOSAGGIO
+];
+
+[Map_ModalitaPagamento]:
+MAPPING LOAD * INLINE [
+Codice, Descrizione
+01, Vaccinazione a carico SSN
+02, Vaccinazione in compartecipazione alla spesa o prezzo sociale
+03, Pagamento integrale a carico dell'assistito
+99, Dato non disponibile
+];
+
+[Map_SitoInoculazione]:
+MAPPING LOAD * INLINE [
+Codice, Descrizione
+01, deltoide sinistro
+02, deltoide destro
+03, quadricipite della coscia sinistra
+04, quadricipite della coscia destra
+05, gluteo sinistro
+06, gluteo destro
+07, Altro
+99, Dato non disponibile
+];
+
+[Map_Esclusione]:
+MAPPING LOAD * INLINE [
+Codice, Descrizione
+01, Trasferito in altra ASL o estero
+02, Esonerato in maniera permanente per motivi di salute
+03, Esonerato in maniera temporanea per motivi di salute o altra causa
+04, Non rintracciabile
+05, Dissensi informati temporanei
+06, Dissensi informati definitivi (rifiuti definitivi)
+07, Soggetto in attesa di recuperare il libretto vaccinale dal Paese di origine o che ha iniziato (ma non completato) da capo il ciclo vaccinale
+08, Pregressa immunità da malattia naturale
+09, Rintracciato/contattato, ma non presentatosi
+10, Mancata disponibilità del vaccino
+11, Superato limite di età
+99, Altro (specificare)
+];
+
+
+// ============================================================
+// STEP 5 - FACT TABLE UNICA (con tutte le descrizioni)
+// ============================================================
+
+[Fact_Vaccinazioni]:
+LOAD
+    // Chiavi per le dimensioni
+    ID_ASSISTITO_GIAVA                                              as %ID_ASSISTITO,
+    DATASOMMINISTRAZIONE                                            as %DATA,
+    
+    // Tipo evento
+    'Somministrata'                                                 as TIPO_EVENTO,
+    
+    // Contatore per somministrate
+    1                                                               as ContaSomministrazioni,
+    
+    // Campi ANTIGENE e DOSE
+    CODANTIGENE,
+    DOSE,
+    Text(if(DOSE = 1, '1',
+    if(DOSE = 2, '2',
+    if(DOSE = 3, '3',
+    if(DOSE = 4, '4',
+    if(DOSE = 5, '5',
+    'over 5')))))) as Categoria_Dose,
+    Capitalize(ApplyMap('Map_Antigeni', CODANTIGENE, 'ND'))         as ANTIGENE_DES,
+    
+    // Campi VACCINO
+    CODICEAICVACCINO,
+    DENOMVACCINO,
+    
+    // Campi geografici della somministrazione
+    COMUNESOMMINISTRAZIONE,
+    ApplyMap('Map_ComuneDes', COMUNESOMMINISTRAZIONE, 'ND')         as ComuneSomm_Des,
+    REGIONESOMMINISTRAZIONE & ASLSOMMINISTRAZIONE                   as ASL_SOMM_COD,
+    ApplyMap('Map_ASLDes', REGIONESOMMINISTRAZIONE & ASLSOMMINISTRAZIONE, 'ND') as ASLSomm_Des,
+    REGIONESOMMINISTRAZIONE,
+    ApplyMap('Map_RegioneDes', Right('000' & Text(REGIONESOMMINISTRAZIONE), 3), 'ND') as RegioneSomm_Des,
+    
+    // Campi geografici da anagrafica (residenza e domicilio) - valorizzati anche per somministrate
+    ApplyMap('Map_ComuneResidenza', ID_ASSISTITO_GIAVA, Null())     as COMUNE_RESIDENZA_COD,
+    ApplyMap('Map_ComuneDes',
+        ApplyMap('Map_ComuneResidenza', ID_ASSISTITO_GIAVA, ''), 'ND') as ComuneResidenza_Des,
+    ApplyMap('Map_ComuneDomicilio', ID_ASSISTITO_GIAVA, Null())     as COMUNE_DOMICILIO_COD,
+    ApplyMap('Map_ComuneDes',
+        ApplyMap('Map_ComuneDomicilio', ID_ASSISTITO_GIAVA, ''), 'ND') as ComuneDomicilio_Des,
+    ApplyMap('Map_ASLResidenza', ID_ASSISTITO_GIAVA, Null())        as ASL_RESIDENZA_COD,
+    ApplyMap('Map_ASLDes',
+        ApplyMap('Map_ASLResidenza', ID_ASSISTITO_GIAVA, ''), 'ND') as ASLResidenza_Des,
+    ApplyMap('Map_ASLDomicilio', ID_ASSISTITO_GIAVA, Null())        as ASL_DOMICILIO_COD,
+    ApplyMap('Map_ASLDes',
+        ApplyMap('Map_ASLDomicilio', ID_ASSISTITO_GIAVA, ''), 'ND') as ASLDomicilio_Des,
+    Right('000' & Text(ApplyMap('Map_RegioneResidenza', ID_ASSISTITO_GIAVA, '')), 3) as REGIONE_RESIDENZA_COD,
+    capitalize(ApplyMap('Map_RegioneDes',
+        Right('000' & Text(ApplyMap('Map_RegioneResidenza', ID_ASSISTITO_GIAVA, '')), 3), 'ND')) as RegioneResidenza_Des,
+    Right('000' & Text(ApplyMap('Map_RegioneDomicilio', ID_ASSISTITO_GIAVA, '')), 3) as REGIONE_DOMICILIO_COD,
+    Capitalize(ApplyMap('Map_RegioneDes',
+        Right('000' & Text(ApplyMap('Map_RegioneDomicilio', ID_ASSISTITO_GIAVA, '')), 3), 'ND')) as RegioneDomicilio_Des,
+    
+    // Altri campi somministrazione
+    CODICESTRUTTURA,
+    TIPOEROGATORE,
+    ApplyMap('Map_TipoErogatore', TIPOEROGATORE, 'ND')              as TIPOEROGATORE_DESC,
+    CODCONDIZIONESANITARIA,
+    ApplyMap('Map_CondizioniSanitarie', CODCONDIZIONESANITARIA, 'ND') as CODCONDIZIONESANITARIA_DESC,
+    CODCATEGORIARISCHIO,
+    ApplyMap('Map_CategoriaRischio', CODCATEGORIARISCHIO, 'ND')     as CODCATEGORIARISCHIO_DESC,
+    LOTTOVACCINO, 
+    DATASCADENZA,
+    MODALITAPAGAMENTO,
+    ApplyMap('Map_ModalitaPagamento', MODALITAPAGAMENTO, 'ND')      as MODALITAPAGAMENTO_DESC,
+    SITOINOCULAZIONE,
+    ApplyMap('Map_SitoInoculazione', SITOINOCULAZIONE, 'ND')        as SITOINOCULAZIONE_DESC,
+    STATOESTEROSOMMINISTRAZIONE,
+    
+    // Campi per le mancate (null per le somministrate)
+    Null()                                                          as DATANONEFFETTUAZIONE,
+    Null()                                                          as MOTIVAZIONE,
+    Null()                                                          as MOTIVAZIONE_DESC
+    
+RESIDENT [_Raw_Somm];
+
+CONCATENATE ([Fact_Vaccinazioni])
+LOAD
+    // Chiavi per le dimensioni
+    ID_ASSISTITO_GIAVA                                              as %ID_ASSISTITO,
+    DATANONEFFETTUAZIONE                                            as %DATA,
+    
+    // Tipo evento
+    'Non Effettuata'                                                as TIPO_EVENTO,
+    
+    // Contatore per mancate
+    0                                                               as ContaSomministrazioni,
+    
+    // Campi ANTIGENE e DOSE
+    CODANTIGENE,
+    DOSE,
+    Capitalize(ApplyMap('Map_Antigeni', CODANTIGENE, 'ND'))         as ANTIGENE_DES,
+    
+    // Campi VACCINO (null per le mancate)
+    Null()                                                          as CODICEAICVACCINO,
+    Null()                                                          as DENOMVACCINO,
+    
+    // Campi geografici della somministrazione (null per le mancate)
+    Null()                                                          as COMUNESOMMINISTRAZIONE,
+    Null()                                                          as ComuneSomm_Des,
+    Null()                                                          as ASL_SOMM_COD,
+    Null()                                                          as ASLSomm_Des,
+    Null()                                                          as REGIONESOMMINISTRAZIONE,
+    Null()                                                          as RegioneSomm_Des,
+    
+    // Campi geografici da anagrafica (residenza e domicilio) - valorizzati anche per mancate
+    ApplyMap('Map_ComuneResidenza', ID_ASSISTITO_GIAVA, Null())     as COMUNE_RESIDENZA_COD,
+    ApplyMap('Map_ComuneDes',
+        ApplyMap('Map_ComuneResidenza', ID_ASSISTITO_GIAVA, ''), 'ND') as ComuneResidenza_Des,
+    ApplyMap('Map_ComuneDomicilio', ID_ASSISTITO_GIAVA, Null())     as COMUNE_DOMICILIO_COD,
+    ApplyMap('Map_ComuneDes',
+        ApplyMap('Map_ComuneDomicilio', ID_ASSISTITO_GIAVA, ''), 'ND') as ComuneDomicilio_Des,
+    ApplyMap('Map_ASLResidenza', ID_ASSISTITO_GIAVA, Null())        as ASL_RESIDENZA_COD,
+    ApplyMap('Map_ASLDes',
+        ApplyMap('Map_ASLResidenza', ID_ASSISTITO_GIAVA, ''), 'ND') as ASLResidenza_Des,
+    ApplyMap('Map_ASLDomicilio', ID_ASSISTITO_GIAVA, Null())        as ASL_DOMICILIO_COD,
+    ApplyMap('Map_ASLDes',
+        ApplyMap('Map_ASLDomicilio', ID_ASSISTITO_GIAVA, ''), 'ND') as ASLDomicilio_Des,
+    Right('000' & Text(ApplyMap('Map_RegioneResidenza', ID_ASSISTITO_GIAVA, '')), 3) as REGIONE_RESIDENZA_COD,
+    capitalize(ApplyMap('Map_RegioneDes',
+        Right('000' & Text(ApplyMap('Map_RegioneResidenza', ID_ASSISTITO_GIAVA, '')), 3), 'ND')) as RegioneResidenza_Des,
+    Right('000' & Text(ApplyMap('Map_RegioneDomicilio', ID_ASSISTITO_GIAVA, '')), 3) as REGIONE_DOMICILIO_COD,
+    capitalize(ApplyMap('Map_RegioneDes',
+        Right('000' & Text(ApplyMap('Map_RegioneDomicilio', ID_ASSISTITO_GIAVA, '')), 3), 'ND')) as RegioneDomicilio_Des,
+    
+    // Altri campi somministrazione (null per le mancate)
+    Null()                                                          as CODICESTRUTTURA,
+    Null()                                                          as TIPOEROGATORE,
+    Null()                                                          as TIPOEROGATORE_DESC,
+    Null()                                                          as CODCONDIZIONESANITARIA,
+    Null()                                                          as CODCONDIZIONESANITARIA_DESC,
+    Null()                                                          as CODCATEGORIARISCHIO,
+    Null()                                                          as CODCATEGORIARISCHIO_DESC,
+    Null()                                                          as LOTTOVACCINO,
+    Null()                                                          as DATASCADENZA,
+    Null()                                                          as MODALITAPAGAMENTO,
+    Null()                                                          as MODALITAPAGAMENTO_DESC,
+    Null()                                                          as SITOINOCULAZIONE,
+    Null()                                                          as SITOINOCULAZIONE_DESC,
+    Null()                                                          as STATOESTEROSOMMINISTRAZIONE,
+    
+    // Campi per le mancate
+    DATANONEFFETTUAZIONE,
+    MOTIVAZIONE,
+    ApplyMap('Map_Esclusione', MOTIVAZIONE, 'ND')                   as MOTIVAZIONE_DESC
+    
+RESIDENT [_Raw_Mancate];
+
+// ============================================================
+// STEP 6 - DIM ASSISTITO
+// ============================================================
+
+[Dim_Assistito]:
+LOAD *,
+    If(ETA < 1,  '0 - 1',
+    If(ETA < 2,  '1 - 2',
+    If(ETA < 5,  '2 - 4',
+    If(ETA < 7,  '5 - 6',
+    If(ETA < 11, '7 - 10',
+    If(ETA < 13, '11 - 12',
+    If(ETA < 18, '13 - 17',
+    If(ETA < 60, '18 - 59',
+    If(ETA < 65, '60 - 64',
+    If(ETA < 70, '65 - 69',
+    If(ETA < 75, '70 - 74',
+    If(ETA < 80, '75 - 79',
+    If(ETA < 85, '80 - 84',
+    If(ETA < 90, '85 - 89',
+    '90+'
+)))))))))))))) As FASCEETA
+;
+LOAD
+    %ID_ASSISTITO,
+    CI_CIFRATO, CI_TIPOLOGIA, SESSO, SESSO_DES,
+    ANNONASCITA, ETA, COMUNERESIDENZA_COD, COMUNEDOMICILIO_COD,
+    ASLRESIDENZA_COD, ASLDOMICILIO_COD, REGIONERESIDENZA,
+    STATOESTERORESIDENZA, REGIONEDOMICILIO, CITTADINANZA,
+    DATADECESSO, CUNI
+FROM [lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/02.Qlik/QV_Associative/VaccinazioniAnagrafica.qvd]
+(qvd)
+WHERE EXISTS(%ID_ASSISTITO,%ID_ASSISTITO);
+
+
+
+
+
+
+// ============================================================
+// STEP 7 - DIM TEMPO
+// ============================================================
+
+[Dim_Tempo]:
+LOAD DISTINCT
+    %DATA,
+    Year(%DATA)                              as Anno,
+    Month(%DATA)                             as Mese,
+    Num(Month(Date(%DATA))) 				as Mese_Num,
+    MonthName(%DATA)                         as MeseNome,
+    Day(%DATA)                               as Giorno,
+    Week(%DATA)                              as Settimana,
+    WeekDay(%DATA)                           as GiornoSettimana,
+    Month(%DATA)                             as MeseGrafico,
+    'Q' & Ceil(Month(%DATA)/3) & ' ' & Year(%DATA) as Trimestre,
+    MonthStart(%DATA)                        as AnnoMese,
+    Year(%DATA)*100 + Month(%DATA)           as AnnoMeseNum
+RESIDENT [Fact_Vaccinazioni];
+
+
+// ============================================================
+// STEP 8 - PULIZIA
+// ============================================================
+
+DROP TABLE [_Raw_Somm];
+DROP TABLE [_Raw_Mancate];
+
+Store Fact_Vaccinazioni into 'lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/02.Qlik/QV_Golden/Vaccinazioni/Vaccinazioni.qvd' (qvd);
+
+Store Dim_Assistito into 'lib://Qlik_Dati_Basilicata/EIMaS/01.Sanitario/02.Qlik/QV_Golden/Vaccinazioni/Anagrafica.qvd' (qvd);
+
+Prova per Push
